@@ -18,6 +18,9 @@
 #include <opencv2/videoio.hpp>
 #include <spdlog/spdlog.h>
 #include <popl.hpp>
+#include <librealsense2/rs.hpp>
+
+#include "util/cv-helpers.hpp"
 
 #ifdef USE_STACK_TRACE_LOGGER
 #include <glog/logging.h>
@@ -38,30 +41,19 @@ void RGBD_tracking(const std::shared_ptr<openvslam::config>& cfg,
     // use pangolin viewer 
     pangolin_viewer::viewer viewer(cfg, &SLAM, SLAM.get_frame_publisher(), SLAM.get_map_publisher());
 
-    try{
-            // Declare depth colorizer for pretty visualization of depth data
-            rs2::colorizer color_map;
-            // Declare RealSense pipeline, encapsulating the actual device and sensors
-            rs2::pipeline pipe;
-            // Start streaming with default recommended configuration
-            pipe.start();
-    }
-    catch (const rs2::error & e)
-    {
-        spdlog::critical("RealSense error calling");
-        SLAM.shutdown();
-        return;
-    }
-    catch (const std::exception& e)
-    {
-        spdlog::critical(e.what());
-        SLAM.shutdown();
-        return;
-    }
-
-    cv::Mat frame;
+    
+    // Declare depth colorizer for pretty visualization of depth data
+    rs2::colorizer color_map;
+    // Declare RealSense pipeline, encapsulating the actual device and sensors
+    rs2::pipeline pipe;
+    // Start streaming with default recommended configuration
+    pipe.start();
+ 	
+ 	rs2::frameset data = pipe.wait_for_frames();
+    
+	cv::Mat frame;
     double timestamp = 0.0;
-    rs2::frameset data = pipe.wait_for_frames();
+    //rs2::frameset data = pipe.wait_for_frames();
     rs2::frame depth = data.get_depth_frame().apply_filter(color_map);
 
     bool is_not_end = true;
@@ -79,14 +71,14 @@ void RGBD_tracking(const std::shared_ptr<openvslam::config>& cfg,
             rs2::frame color_frame = data.get_color_frame();
 
             auto color_mat = frame_to_mat(color_frame);
-            auto depth_mat = depth_frame_to_meters(depth_frame);
+            auto depth_mat = frame_to_mat(depth_frame);
 
-            // ******
+            /*
             cv::Mat image(Size(w, h), CV_8UC3, (void*)color_frame.get_data(), Mat::AUTO_STEP);
             cv::Mat image(Size(w, h), CV_8UC3, (void*)depth_frame.get_data(), Mat::AUTO_STEP);
-            // ****** 
+            */
 
-            SLAM.feed_RGBD_frame(color_frame, depth_frame, timestamp, mask);
+            SLAM.feed_RGBD_frame(color_mat, depth_mat, timestamp, mask);
             timestamp += 1.0 / cfg->camera_->fps_;
         }
     });
@@ -271,7 +263,7 @@ int main(int argc, char* argv[]) {
 
     // run tracking
     if (cfg->camera_->setup_type_ == openvslam::camera::setup_type_t::Monocular) {
-        mono_tracking(cfg, vocab_file_path->value(), cam_num->value(), mask_img_path->value(),
+        RGBD_tracking(cfg, vocab_file_path->value(), cam_num->value(), mask_img_path->value(),
                       scale->value(), map_db_path->value());
     }
     else if (cfg->camera_->setup_type_ == openvslam::camera::setup_type_t::Stereo) {
